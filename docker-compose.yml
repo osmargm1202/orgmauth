@@ -1,0 +1,21 @@
+services:
+  orgmauth:
+    image: orgmcr.or-gm.com/osmargm1202/orgmauth:latest
+    container_name: orgmauth
+    restart: unless-stopped
+    networks:
+      - nginx_proxy_network
+    ports:
+      - "8500:8500"
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8500/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  nginx_proxy_network:
+    external: true
