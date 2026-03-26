@@ -39,10 +39,17 @@ class TokenResponse(BaseModel):
     user: UserResponse
 
 
-class TokenValidationResponse(BaseModel):
-    valid: bool
-    user: Optional[UserResponse] = None
-    expires_at: Optional[datetime] = None
+class JWKResponse(BaseModel):
+    kty: str
+    kid: str
+    use: str = "sig"
+    alg: str
+    n: str
+    e: str
+
+
+class JWKSResponse(BaseModel):
+    keys: list[JWKResponse]
 
 
 class DeniedAppBase(BaseModel):
@@ -73,8 +80,10 @@ class AccessTokenPayload(BaseModel):
     email: str
     app_name: Optional[str] = None
     type: str = "access"
+    exp: datetime
 
 
 class RefreshTokenPayload(BaseModel):
     sub: str
     type: str = "refresh"
+    exp: datetime

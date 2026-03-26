@@ -1,4 +1,5 @@
 from typing import Optional
+from datetime import datetime
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -6,8 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import User, Session as SessionModel
-from app.auth.jwt import verify_access_token, verify_token_hash
-from app.schemas import AccessTokenPayload, UserResponse
+from app.auth.jwt import verify_access_token
 
 security = HTTPBearer(auto_error=False)
 
@@ -36,7 +36,7 @@ def get_current_user_optional(
         .first()
     )
 
-    if session and session.expires_at < session.expires_at.utcnow():
+    if session and session.expires_at < datetime.utcnow():
         return None
 
     return user
@@ -76,7 +76,7 @@ def get_current_user(
         .first()
     )
 
-    if session and session.expires_at < session.expires_at.utcnow():
+    if session and session.expires_at < datetime.utcnow():
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session expired",

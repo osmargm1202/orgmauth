@@ -35,6 +35,9 @@ DATABASE_URL=postgresql://user:password@host:5432/orgmauth
 GOOGLE_CLIENT_ID=tu_google_client_id
 GOOGLE_CLIENT_SECRET=tu_google_client_secret
 ORGM_SECRET_KEY=tu_secret_key_para_jwt_min_32_caracteres
+ACCESS_TOKEN_ACTIVE_KID=orgauth-rs256-2026-03
+ACCESS_TOKEN_PRIVATE_KEY_PEM="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+ACCESS_TOKEN_PUBLIC_KEY_PEM="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
 ALLOWED_DOMAIN=or-gm.com
 BASE_URL=https://auth.or-gm.com
 ACCESS_TOKEN_EXPIRE_MINUTES=15
@@ -84,11 +87,10 @@ docker push orgmcr.or-gm.com/osmargm1202/orgmauth:latest
 | Método | Path | Descripción |
 |--------|------|-------------|
 | POST | `/token/refresh` | Refresca access token |
-| GET | `/token/validate` | Valida access token |
-| GET | `/me` | Datos del usuario actual |
-| GET | `/denied-apps` | Lista de apps negadas |
-| POST | `/denied-apps` | Agrega app negada |
-| DELETE | `/denied-apps/{app_name}` | Quita app negada |
+| GET | `/token/me` | Datos del usuario actual |
+| GET | `/token/denied-apps` | Lista de apps negadas |
+| POST | `/token/denied-apps` | Agrega app negada |
+| DELETE | `/token/denied-apps/{app_name}` | Quita app negada |
 
 ## Flujo de Autenticación CLI
 

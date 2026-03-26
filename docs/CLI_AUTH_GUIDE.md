@@ -15,7 +15,7 @@ If you are building an API, service, or backend that needs to validate or refres
 
 After a successful login, OrgAuth gives the CLI:
 
-- an access token JWT intended to last `15 minutes`
+- an access token JWT intended to last `15 minutes` and signed for JWKS-based downstream validation
 - a refresh token JWT intended to last `7 days`
 - basic user info
 
@@ -157,6 +157,7 @@ Important caveats:
 - Replace both stored tokens after every successful refresh.
 - Do not keep using an older refresh token after rotation succeeds.
 - There is no server endpoint that can recover a lost refresh token from an access token.
+- Treat the refresh token as an OrgAuth-only exchange credential. Do not try to validate it locally with JWKS.
 
 ## When the CLI Must Send the User Through Login Again
 
@@ -180,4 +181,4 @@ Start a fresh `/auth` flow when:
 6. Refresh once.
 7. If refresh fails with `401`, clear local auth state and send the user through login again.
 
-For refresh and token validation details, see `docs/APP_TOKEN_GUIDE.md`.
+For refresh and token-consumption details, see `docs/APP_TOKEN_GUIDE.md`. New downstream integrations should validate access tokens with `/.well-known/jwks.json`; the CLI should still send refresh tokens only to `/token/refresh`.

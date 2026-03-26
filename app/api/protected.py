@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -20,10 +20,10 @@ from app.auth.jwt import (
     hash_token,
     verify_token_hash,
 )
+from app.config import settings
 from app.schemas import (
     UserResponse,
     TokenResponse,
-    TokenValidationResponse,
     DeniedAppCreate,
     DeniedAppResponse,
 )
@@ -123,37 +123,8 @@ def refresh_token(
         access_token=access_token,
         refresh_token=new_refresh_token,
         token_type="bearer",
-        expires_in=900,
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         user=user_response,
-    )
-
-
-@router.get("/validate", response_model=TokenValidationResponse)
-def validate_token(
-    authorization: str = None,
-    db: Session = Depends(get_db),
-):
-    if authorization is None or not authorization.startswith("Bearer "):
-        return TokenValidationResponse(valid=False)
-
-    token = authorization.replace("Bearer ", "")
-    token_payload = verify_access_token(token)
-
-    if token_payload is None:
-        return TokenValidationResponse(valid=False)
-
-    user = db.query(User).filter(User.id == int(token_payload.sub)).first()
-    if user is None:
-        return TokenValidationResponse(valid=False)
-
-    from app.config import settings
-
-    expires_in_seconds = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
-
-    return TokenValidationResponse(
-        valid=True,
-        user=UserResponse.model_validate(user),
-        expires_at=datetime.utcnow().replace(microsecond=0),
     )
 
 

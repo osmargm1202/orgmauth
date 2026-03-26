@@ -13,8 +13,8 @@ If you are building the CLI login flow itself, including the localhost callback 
 
 ## What OrgAuth Issues
 
-- Access token: JWT signed with `HS256`, intended lifetime `15 minutes`
-- Refresh token: JWT signed with `HS256`, intended lifetime `7 days`
+- Access token: JWT signed with `RS256`, intended lifetime `15 minutes`
+- Refresh token: JWT signed with `RS256` (same RSA keyring as access token), intended lifetime `7 days`
 
 Current access token claims:
 
@@ -40,74 +40,51 @@ Current refresh token claims:
 
 ## Validating Access Tokens
 
-There are two practical options.
+### Preferred option: local validation with JWKS
 
-### Option A: Remote validation through OrgAuth
-
-Current endpoint:
+Fetch the public signing keys from:
 
 ```text
-GET /token/validate?authorization=Bearer%20<access-token>
+GET /.well-known/jwks.json
 ```
 
-Current success response:
+Access tokens now include a `kid` header so downstream services can pick the correct public key from the JWKS response and validate them locally with standard JWT tooling.
+
+Expected access-token claims:
 
 ```json
 {
-  "valid": true,
-  "user": {
-    "id": 123,
-    "google_id": "google-user-id",
-    "email": "user@or-gm.com",
-    "name": "User Name",
-    "picture": "https://...",
-    "created_at": "2026-03-26T12:00:00",
-    "last_access": "2026-03-26T12:00:00"
-  },
-  "expires_at": "2026-03-26T12:00:00"
+  "sub": "123",
+  "email": "user@or-gm.com",
+  "app_name": "orgmcalc-cli",
+  "type": "access",
+  "exp": 1711459200
 }
 ```
 
-Current invalid response:
+Recommended validator behavior:
 
-```json
-{
-  "valid": false,
-  "user": null,
-  "expires_at": null
-}
+- cache `/.well-known/jwks.json` using the response cache headers
+- validate signature, `exp`, and `type == "access"`
+- if the token `kid` is unknown, refresh JWKS once and retry
+- if the `kid` is still unknown after refresh, treat the token as invalid
+
+Example using PyJWT:
+
+```python
+import requests
+import jwt
+
+AUTH_BASE = "https://auth.or-gm.com"
+
+
+def validate_access_token(access_token: str) -> dict:
+    jwks = requests.get(f"{AUTH_BASE}/.well-known/jwks.json", timeout=10).json()
+    header = jwt.get_unverified_header(access_token)
+    jwk = next(key for key in jwks["keys"] if key["kid"] == header["kid"])
+    public_key = jwt.algorithms.RSAAlgorithm.from_jwk(jwk)
+    return jwt.decode(access_token, public_key, algorithms=["RS256"])
 ```
-
-Recommended behavior:
-
-- treat `valid: true` as "the token decoded, had `type=access`, and the user still exists"
-- treat `valid: false` as unusable and refresh or reauthenticate
-- cache successful validation briefly if you need to reduce calls back to OrgAuth
-
-Current caveats:
-
-- `/token/validate` reads `authorization` from the query string, not from the HTTP `Authorization` header
-- `expires_at` is currently set to the server's current UTC time, not the token's real expiration time
-- validation does not currently require the presented access token to match a stored session record
-
-### Option B: Local JWT verification in a trusted service
-
-Use local verification only if your service is trusted to hold the same signing secret as OrgAuth.
-
-If you verify locally, enforce at least:
-
-- signature verification with the shared `HS256` secret
-- `type == "access"`
-- `exp` has not passed
-
-Treat `app_name` as context, not as a standalone authorization decision.
-
-Current caveats:
-
-- there is no JWKS endpoint
-- there is no public key distribution model
-- there is no standard token introspection endpoint
-- desktop apps, distributed CLIs, and browser apps should not embed the OrgAuth signing secret just to verify tokens locally
 
 ## Refreshing Tokens
 
@@ -152,9 +129,11 @@ Recommended behavior:
 3. Never continue using the old refresh token after a successful refresh.
 4. If refresh returns any `401`, clear local auth state and start a new login.
 
-Current caveat:
+Refresh contract notes:
 
-- `/token/refresh` expects `refresh_token` in the query string, not in a JSON or form body.
+- `/token/refresh` still expects `refresh_token` in the query string
+- a successful refresh returns a new asymmetric access token and a rotated refresh token
+- refresh tokens are OrgAuth-only credentials and are not published in JWKS
 
 ## When to Reauthenticate
 
@@ -175,8 +154,7 @@ In practice, clients should follow this order:
 
 - keep the access token in memory when possible and persist the refresh token in secure storage
 - rotate the stored token pair atomically after a successful refresh so the process never keeps a stale refresh token
-- do not schedule refreshes from `/token/validate.expires_at`; use the original `expires_in` or decode `exp` yourself
-- prefer remote validation if your service should not know the OrgAuth signing secret
+- do not rely on OrgAuth to validate access tokens request-by-request; use the original `expires_in` or decode `exp` yourself
 - return your own `401` or equivalent auth failure when OrgAuth validation fails
 
 ## Security and Implementation Caveats
@@ -184,25 +162,14 @@ In practice, clients should follow this order:
 - Access and refresh tokens are bearer credentials. Anyone holding them can act as the user until they expire or are revoked.
 - Refresh token rotation is implemented: a successful refresh revokes the old session and returns a new refresh token.
 - There is no endpoint that exchanges an access token for a new refresh token. If both tokens are unusable, the user must log in again.
-- OrgAuth-protected endpoints inside this codebase use an actual `Authorization: Bearer <token>` header, but `/token/validate` itself currently does not.
+- Legacy HS256 access tokens without `kid` may still validate inside OrgAuth during a short rollout window while older tokens age out.
 
 ## Minimal Integration Example
 
 ```python
-import os
 import httpx
 
-AUTH_BASE = os.environ.get("ORGAUTH_BASE", "https://auth.or-gm.com")
-
-
-def validate_access_token(access_token: str) -> bool:
-    response = httpx.get(
-        f"{AUTH_BASE}/token/validate",
-        params={"authorization": f"Bearer {access_token}"},
-        timeout=10,
-    )
-    data = response.json()
-    return response.status_code == 200 and data.get("valid") is True
+AUTH_BASE = "https://auth.or-gm.com"
 
 
 def refresh_session(refresh_token: str) -> dict | None:

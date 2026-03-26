@@ -6,17 +6,30 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fastapi import HTTPException
+from jose import jwt
 from starlette.requests import Request
+
+from tests.key_material import (
+    TEST_ACCESS_TOKEN_PRIVATE_KEY,
+    TEST_ACCESS_TOKEN_PUBLIC_KEY,
+)
 
 
 TEST_DB_PATH = Path(__file__).resolve().parent / "test_oauth_flow.db"
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{TEST_DB_PATH}")
 os.environ.setdefault("GOOGLE_CLIENT_ID", "test-google-client-id")
 os.environ.setdefault("GOOGLE_CLIENT_SECRET", "test-google-client-secret")
-os.environ.setdefault("ORGM_SECRET_KEY", "test-secret-key")
+os.environ.setdefault("ACCESS_TOKEN_ACTIVE_KID", "test-rs256-key")
+os.environ.setdefault("ACCESS_TOKEN_PRIVATE_KEY_PEM", TEST_ACCESS_TOKEN_PRIVATE_KEY)
+os.environ.setdefault("ACCESS_TOKEN_PUBLIC_KEY_PEM", TEST_ACCESS_TOKEN_PUBLIC_KEY)
 
 from app.auth import router as auth_router
-from app.auth.jwt import create_refresh_token, hash_token, verify_token_hash
+from app.auth.jwt import (
+    create_refresh_token,
+    hash_token,
+    verify_access_token,
+    verify_token_hash,
+)
 from app.database import Base, SessionLocal, engine
 from app.models import Application, OAuthFlow, Session as SessionModel
 
@@ -128,9 +141,18 @@ async def test_callback_returns_matching_flow_id_and_consumes_state(
     )
 
     redirect_query = parse_qs(urlparse(callback_response.headers["location"]).query)
+    access_token = redirect_query["token"][0]
     refresh_token = redirect_query["refresh_token"][0]
 
     assert redirect_query["flow_id"] == ["cli-flow-1"]
+    token_header = jwt.get_unverified_header(access_token)
+    token_payload = verify_access_token(access_token)
+
+    assert token_header["alg"] == "RS256"
+    assert token_header["kid"] == "test-rs256-key"
+    assert token_header["typ"] == "JWT"
+    assert token_payload is not None
+    assert token_payload.app_name == "orgmcalc-cli"
 
     created_session = db_session.query(SessionModel).one()
     assert verify_token_hash(refresh_token, created_session.refresh_token_hash)
@@ -189,6 +211,59 @@ async def test_callback_keeps_parallel_cli_flows_separate(db_session, monkeypatc
 
     assert first_query["flow_id"] == ["cli-flow-a"]
     assert second_query["flow_id"] == ["cli-flow-b"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_rotates_tokens_and_returns_asymmetric_access_token(
+    db_session, monkeypatch
+):
+    async def fake_exchange_code_for_tokens(code: str) -> dict:
+        return {"access_token": f"google-{code}"}
+
+    async def fake_get_google_userinfo(access_token: str) -> dict:
+        return {
+            "sub": "google-user-refresh",
+            "email": "person@or-gm.com",
+            "name": "Person Refresh",
+            "picture": None,
+        }
+
+    monkeypatch.setattr(
+        auth_router, "exchange_code_for_tokens", fake_exchange_code_for_tokens
+    )
+    monkeypatch.setattr(auth_router, "get_google_userinfo", fake_get_google_userinfo)
+
+    auth_response = await auth_router.auth(
+        app_name="orgmcalc-cli",
+        redirect_uri="http://localhost:3000/callback",
+        flow_id="cli-flow-refresh",
+        db=db_session,
+    )
+
+    callback_response = await auth_router.callback(
+        code="oauth-code",
+        state=_extract_state(auth_response.headers["location"]),
+        db=db_session,
+        request=_build_request(),
+    )
+
+    original_query = parse_qs(urlparse(callback_response.headers["location"]).query)
+    original_refresh_token = original_query["refresh_token"][0]
+
+    from app.api import protected as protected_api
+
+    refreshed = protected_api.refresh_token(original_refresh_token, db=db_session)
+
+    assert refreshed.refresh_token != original_refresh_token
+    assert verify_access_token(refreshed.access_token) is not None
+    assert jwt.get_unverified_header(refreshed.access_token)["kid"] == "test-rs256-key"
+
+    sessions = (
+        db_session.query(SessionModel).order_by(SessionModel.created_at.asc()).all()
+    )
+    assert len(sessions) == 2
+    assert sessions[0].revoked is True
+    assert verify_token_hash(refreshed.refresh_token, sessions[1].refresh_token_hash)
 
 
 @pytest.mark.asyncio

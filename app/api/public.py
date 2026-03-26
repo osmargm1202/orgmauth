@@ -1,14 +1,24 @@
-from typing import Optional
-
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
+from app.auth.jwt import get_jwks
 from app.database import get_db
 from app.models import Application, User, UserDeniedApp
-from app.schemas import ApplicationResponse, UserResponse, AllowedAppsResponse
+from app.schemas import (
+    ApplicationResponse,
+    UserResponse,
+    AllowedAppsResponse,
+    JWKSResponse,
+)
+from app.config import settings
 
 router = APIRouter(tags=["public"])
+
+
+@router.get("/.well-known/jwks.json", response_model=JWKSResponse)
+def get_jwks_document(response: Response):
+    response.headers["Cache-Control"] = settings.JWKS_CACHE_CONTROL
+    return get_jwks()
 
 
 @router.get("/apps", response_model=list[ApplicationResponse])
