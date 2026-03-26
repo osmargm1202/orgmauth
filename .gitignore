@@ -11,3 +11,7 @@ wheels/
 .env
 *.pem
 
+# Test databases
+*.db
+*.db-journal
+
