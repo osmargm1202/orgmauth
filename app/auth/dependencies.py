@@ -1,5 +1,5 @@
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -31,12 +31,12 @@ def get_current_user_optional(
         db.query(SessionModel)
         .filter(
             SessionModel.user_id == user.id,
-            SessionModel.revoked == False,
+            not SessionModel.revoked,
         )
         .first()
     )
 
-    if session and session.expires_at < datetime.utcnow():
+    if session and session.expires_at < datetime.now(timezone.utc):
         return None
 
     return user
@@ -70,13 +70,13 @@ def get_current_user(
         db.query(SessionModel)
         .filter(
             SessionModel.user_id == user.id,
-            SessionModel.revoked == False,
+            not SessionModel.revoked,
         )
         .order_by(SessionModel.created_at.desc())
         .first()
     )
 
-    if session and session.expires_at < datetime.utcnow():
+    if session and session.expires_at < datetime.now(timezone.utc):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session expired",

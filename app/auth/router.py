@@ -1,8 +1,7 @@
 import base64
 import json
 import secrets
-from datetime import datetime
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -67,7 +66,7 @@ async def auth(
         flow_id=resolved_flow_id,
         app_name=app_name,
         redirect_uri=redirect_uri,
-        expires_at=datetime.utcnow() + OAUTH_FLOW_TTL,
+        expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + OAUTH_FLOW_TTL,
     )
     db.add(oauth_flow)
     db.commit()
@@ -114,7 +113,7 @@ async def callback(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="OAuth flow already completed",
         )
-    if oauth_flow.expires_at < datetime.utcnow():
+    if oauth_flow.expires_at < datetime.now(timezone.utc).replace(tzinfo=None):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="OAuth flow expired",
@@ -151,7 +150,7 @@ async def callback(
         db.commit()
         db.refresh(user)
 
-    user.last_access = datetime.utcnow()
+    user.last_access = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
 
     denied = (
@@ -188,7 +187,7 @@ async def callback(
     )
     db.add(access_log)
 
-    oauth_flow.consumed_at = datetime.utcnow()
+    oauth_flow.consumed_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     db.commit()
 

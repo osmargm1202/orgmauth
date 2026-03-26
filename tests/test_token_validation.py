@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -95,14 +95,20 @@ def test_load_access_token_keyring_rejects_duplicate_kids():
                     {
                         "kid": "dup",
                         "algorithm": "RS256",
-                        "public_key_pem": get_access_token_keyring().active_key.public_key_pem,
-                        "private_key_pem": get_access_token_keyring().active_key.private_key_pem,
+                        "public_key_pem": (
+                            get_access_token_keyring().active_key.public_key_pem
+                        ),
+                        "private_key_pem": (
+                            get_access_token_keyring().active_key.private_key_pem
+                        ),
                         "status": "active",
                     },
                     {
                         "kid": "dup",
                         "algorithm": "RS256",
-                        "public_key_pem": get_access_token_keyring().active_key.public_key_pem,
+                        "public_key_pem": (
+                            get_access_token_keyring().active_key.public_key_pem
+                        ),
                         "status": "grace",
                     },
                 ],
@@ -119,8 +125,12 @@ def test_load_access_token_keyring_rejects_retired_active_key():
                     {
                         "kid": "retired",
                         "algorithm": "RS256",
-                        "public_key_pem": get_access_token_keyring().active_key.public_key_pem,
-                        "private_key_pem": get_access_token_keyring().active_key.private_key_pem,
+                        "public_key_pem": (
+                            get_access_token_keyring().active_key.public_key_pem
+                        ),
+                        "private_key_pem": (
+                            get_access_token_keyring().active_key.private_key_pem
+                        ),
                         "status": "retired",
                     }
                 ],
@@ -202,7 +212,7 @@ def test_protected_endpoint_rejects_unknown_kid_token(client, db_session):
         refresh_token_hash="unused",
         access_token_hash="unused",
         app_name="orgmcalc-cli",
-        expires_at=datetime.utcnow() + timedelta(minutes=15),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
     )
     db_session.add(session)
     db_session.commit()
@@ -214,7 +224,7 @@ def test_protected_endpoint_rejects_unknown_kid_token(client, db_session):
             "email": user.email,
             "app_name": "orgmcalc-cli",
             "type": "access",
-            "exp": datetime.utcnow() + timedelta(minutes=15),
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
         },
         active_key.private_key_pem,
         algorithm="RS256",
@@ -248,7 +258,7 @@ def test_legacy_hs256_access_tokens_still_work_for_protected_routes(
         refresh_token_hash="unused",
         access_token_hash="unused",
         app_name="orgmcalc-cli",
-        expires_at=datetime.utcnow() + timedelta(minutes=15),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
     )
     db_session.add(session)
     db_session.commit()
@@ -261,7 +271,7 @@ def test_legacy_hs256_access_tokens_still_work_for_protected_routes(
             "email": user.email,
             "app_name": "orgmcalc-cli",
             "type": "access",
-            "exp": datetime.utcnow() + timedelta(minutes=15),
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
         },
         "test-secret-key",
         algorithm="HS256",

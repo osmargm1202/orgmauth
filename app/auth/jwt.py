@@ -3,7 +3,7 @@ import hashlib
 import hmac
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from cryptography.hazmat.primitives import serialization
@@ -138,7 +138,7 @@ def get_jwks() -> JWKSResponse:
 def create_access_token(
     user_id: int, email: str, app_name: Optional[str] = None
 ) -> tuple[str, datetime]:
-    expires_at = datetime.utcnow() + timedelta(
+    expires_at = datetime.now(timezone.utc) + timedelta(
         minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
     )
     payload = {
@@ -160,7 +160,9 @@ def create_access_token(
 
 
 def create_refresh_token(user_id: int) -> tuple[str, datetime]:
-    expires_at = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    expires_at = datetime.now(timezone.utc) + timedelta(
+        days=settings.REFRESH_TOKEN_EXPIRE_DAYS
+    )
     payload = {
         "sub": str(user_id),
         "type": "refresh",

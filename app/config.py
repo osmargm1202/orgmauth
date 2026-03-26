@@ -34,7 +34,9 @@ class AccessTokenKeyConfig(BaseModel):
 
 
 _PEM_BLOCK_RE = re.compile(
-    r"-----BEGIN (?P<label>[A-Z0-9 ]+)-----\s*(?P<body>[A-Za-z0-9+/=\s]+?)\s*-----END (?P=label)-----",
+    r"-----BEGIN (?P<label>[A-Z0-9 ]+)-----\s*"
+    r"(?P<body>[A-Za-z0-9+/=\s]+?)\s*"
+    r"-----END (?P=label)-----",
     re.DOTALL,
 )
 
@@ -99,7 +101,8 @@ class Settings(BaseSettings):
 
     @property
     def access_token_keyring(self) -> AccessTokenKeyringConfig:
-        grace_keys = json.loads(self.ACCESS_TOKEN_GRACE_KEYS_JSON)
+        grace_raw = self.ACCESS_TOKEN_GRACE_KEYS_JSON
+        grace_keys = json.loads(grace_raw) if grace_raw else []
         return AccessTokenKeyringConfig.model_validate(
             {
                 "active_kid": self.ACCESS_TOKEN_ACTIVE_KID,

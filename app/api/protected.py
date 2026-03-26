@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -9,11 +9,9 @@ from app.models import (
     Session as SessionModel,
     UserDeniedApp,
     Application,
-    AccessLog,
 )
 from app.auth.dependencies import get_current_user
 from app.auth.jwt import (
-    verify_access_token,
     verify_refresh_token,
     create_access_token,
     create_refresh_token,
@@ -86,7 +84,7 @@ def refresh_token(
             detail="Invalid refresh token",
         )
 
-    if session.expires_at < datetime.utcnow():
+    if session.expires_at < datetime.now(timezone.utc).replace(tzinfo=None):
         session.revoked = True
         db.commit()
         raise HTTPException(
