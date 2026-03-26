@@ -117,6 +117,19 @@ uv run python seed.py
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8500
 ```
 
+## Pruebas
+
+```bash
+# Instalar dependencias de desarrollo
+uv sync --extra dev
+
+# Ejecutar pruebas
+uv run pytest
+
+# Ejecutar pruebas con coverage
+uv run pytest --cov=app --cov-report=term-missing
+```
+
 ## Licencia
 
 Privado - OR-GM

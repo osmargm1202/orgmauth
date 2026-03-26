@@ -43,15 +43,36 @@ def refresh_token(
             detail="Invalid refresh token",
         )
 
+    hashed_refresh_token = hash_token(refresh_token)
     session = (
         db.query(SessionModel)
         .filter(
-            SessionModel.user_id == token_payload.sub,
+            SessionModel.user_id == int(token_payload.sub),
             SessionModel.revoked == False,
+            SessionModel.refresh_token_hash == hashed_refresh_token,
         )
         .order_by(SessionModel.created_at.desc())
         .first()
     )
+
+    if session is None:
+        candidate_sessions = (
+            db.query(SessionModel)
+            .filter(
+                SessionModel.user_id == int(token_payload.sub),
+                SessionModel.revoked == False,
+            )
+            .order_by(SessionModel.created_at.desc())
+            .all()
+        )
+        session = next(
+            (
+                candidate
+                for candidate in candidate_sessions
+                if verify_token_hash(refresh_token, candidate.refresh_token_hash)
+            ),
+            None,
+        )
 
     if session is None:
         raise HTTPException(
@@ -73,7 +94,7 @@ def refresh_token(
             detail="Refresh token expired",
         )
 
-    user = db.query(User).filter(User.id == token_payload.sub).first()
+    user = db.query(User).filter(User.id == int(token_payload.sub)).first()
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -121,7 +142,7 @@ def validate_token(
     if token_payload is None:
         return TokenValidationResponse(valid=False)
 
-    user = db.query(User).filter(User.id == token_payload.sub).first()
+    user = db.query(User).filter(User.id == int(token_payload.sub)).first()
     if user is None:
         return TokenValidationResponse(valid=False)
 

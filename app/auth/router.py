@@ -1,4 +1,8 @@
+import base64
+import json
+import secrets
 from datetime import datetime
+from datetime import timedelta
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -14,6 +18,7 @@ from app.models import (
     Session as SessionModel,
     AccessLog,
     UserDeniedApp,
+    OAuthFlow,
 )
 from app.auth.google_oauth import (
     exchange_code_for_tokens,
@@ -25,12 +30,27 @@ from app.auth.jwt import create_access_token, create_refresh_token, hash_token
 from app.schemas import TokenResponse, UserResponse
 
 router = APIRouter(prefix="", tags=["auth"])
+OAUTH_FLOW_TTL = timedelta(minutes=10)
+
+
+def _encode_state(state_id: str) -> str:
+    state_data = {"sid": state_id}
+    return base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
+
+
+def _decode_state(state: str) -> str:
+    state_data = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
+    state_id = state_data.get("sid")
+    if not state_id:
+        raise ValueError("Missing state id")
+    return state_id
 
 
 @router.get("/auth")
 async def auth(
     app_name: str,
     redirect_uri: str,
+    flow_id: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     app = db.query(Application).filter(Application.name == app_name).first()
@@ -40,15 +60,19 @@ async def auth(
             detail=f"Application '{app_name}' not found",
         )
 
-    state_data = {
-        "app_name": app_name,
-        "redirect_uri": redirect_uri,
-    }
+    state_id = secrets.token_urlsafe(32)
+    resolved_flow_id = flow_id or secrets.token_urlsafe(24)
+    oauth_flow = OAuthFlow(
+        state_id=state_id,
+        flow_id=resolved_flow_id,
+        app_name=app_name,
+        redirect_uri=redirect_uri,
+        expires_at=datetime.utcnow() + OAUTH_FLOW_TTL,
+    )
+    db.add(oauth_flow)
+    db.commit()
 
-    import base64
-    import json
-
-    state = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
+    state = _encode_state(state_id)
 
     google_auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
     params = {
@@ -72,24 +96,32 @@ async def callback(
     request: Request = None,
 ):
     try:
-        import base64
-        import json
-
-        state_data = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
+        state_id = _decode_state(state)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid state parameter",
         )
 
-    app_name = state_data.get("app_name")
-    redirect_uri = state_data.get("redirect_uri")
-
-    if not app_name or not redirect_uri:
+    oauth_flow = db.query(OAuthFlow).filter(OAuthFlow.state_id == state_id).first()
+    if oauth_flow is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid state parameters",
+            detail="Unknown OAuth flow",
         )
+    if oauth_flow.consumed_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OAuth flow already completed",
+        )
+    if oauth_flow.expires_at < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OAuth flow expired",
+        )
+
+    app_name = oauth_flow.app_name
+    redirect_uri = oauth_flow.redirect_uri
 
     try:
         token_data = await exchange_code_for_tokens(code)
@@ -156,6 +188,8 @@ async def callback(
     )
     db.add(access_log)
 
+    oauth_flow.consumed_at = datetime.utcnow()
+
     db.commit()
 
     user_response = UserResponse.model_validate(user)
@@ -168,12 +202,10 @@ async def callback(
         user=user_response,
     )
 
-    from urllib.parse import urlencode
-    import json
-
     params = {
         "token": access_token,
         "refresh_token": refresh_token,
+        "flow_id": oauth_flow.flow_id,
         "expires_in": token_response.expires_in,
         "user": json.dumps(
             {
@@ -194,13 +226,13 @@ async def callback_info(
     refresh_token: str,
     expires_in: int,
     user: str,
+    flow_id: Optional[str] = None,
 ):
-    import json
-
     user_data = json.loads(user)
     return {
         "access_token": token,
         "refresh_token": refresh_token,
+        "flow_id": flow_id,
         "expires_in": expires_in,
         "user": user_data,
     }

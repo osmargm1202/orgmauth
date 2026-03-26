@@ -78,6 +78,19 @@ class Session(Base):
     user = relationship("User", back_populates="sessions")
 
 
+class OAuthFlow(Base):
+    __tablename__ = "oauth_flows"
+
+    id = Column(Integer, primary_key=True, index=True)
+    state_id = Column(String(128), unique=True, index=True, nullable=False)
+    flow_id = Column(String(128), index=True, nullable=False)
+    app_name = Column(String(100), nullable=False)
+    redirect_uri = Column(Text, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    consumed_at = Column(DateTime, nullable=True)
+
+
 class AccessLog(Base):
     __tablename__ = "access_logs"
 

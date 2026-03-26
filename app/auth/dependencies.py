@@ -23,7 +23,7 @@ def get_current_user_optional(
     if token_payload is None:
         return None
 
-    user = db.query(User).filter(User.id == token_payload.sub).first()
+    user = db.query(User).filter(User.id == int(token_payload.sub)).first()
     if user is None:
         return None
 
@@ -59,7 +59,7 @@ def get_current_user(
             detail="Invalid or expired token",
         )
 
-    user = db.query(User).filter(User.id == token_payload.sub).first()
+    user = db.query(User).filter(User.id == int(token_payload.sub)).first()
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -8,6 +10,7 @@ from app.config import settings
 from app.schemas import AccessTokenPayload, RefreshTokenPayload
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+TOKEN_HASH_PREFIX = "hmac-sha256:"
 
 
 def create_access_token(
@@ -16,21 +19,25 @@ def create_access_token(
     expires_at = datetime.utcnow() + timedelta(
         minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
     )
-    payload = AccessTokenPayload(
-        sub=user_id, email=email, app_name=app_name, type="access"
-    )
-    token = jwt.encode(
-        payload.model_dump(), settings.ORGM_SECRET_KEY, algorithm="HS256"
-    )
+    payload = {
+        "sub": str(user_id),  # jose requires sub to be string
+        "email": email,
+        "app_name": app_name,
+        "type": "access",
+        "exp": expires_at,
+    }
+    token = jwt.encode(payload, settings.ORGM_SECRET_KEY, algorithm="HS256")
     return token, expires_at
 
 
 def create_refresh_token(user_id: int) -> tuple[str, datetime]:
     expires_at = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    payload = RefreshTokenPayload(sub=user_id, type="refresh")
-    token = jwt.encode(
-        payload.model_dump(), settings.ORGM_SECRET_KEY, algorithm="HS256"
-    )
+    payload = {
+        "sub": str(user_id),  # jose requires sub to be string
+        "type": "refresh",
+        "exp": expires_at,
+    }
+    token = jwt.encode(payload, settings.ORGM_SECRET_KEY, algorithm="HS256")
     return token, expires_at
 
 
@@ -67,8 +74,15 @@ def verify_refresh_token(token: str) -> Optional[RefreshTokenPayload]:
 
 
 def hash_token(token: str) -> str:
-    return pwd_context.hash(token)
+    digest = hmac.new(
+        settings.ORGM_SECRET_KEY.encode(),
+        token.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"{TOKEN_HASH_PREFIX}{digest}"
 
 
 def verify_token_hash(token: str, token_hash: str) -> bool:
+    if token_hash.startswith(TOKEN_HASH_PREFIX):
+        return hmac.compare_digest(hash_token(token), token_hash)
     return pwd_context.verify(token, token_hash)

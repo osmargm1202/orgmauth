@@ -69,12 +69,12 @@ class AllowedAppsResponse(BaseModel):
 
 
 class AccessTokenPayload(BaseModel):
-    sub: int
+    sub: str
     email: str
     app_name: Optional[str] = None
     type: str = "access"
 
 
 class RefreshTokenPayload(BaseModel):
-    sub: int
+    sub: str
     type: str = "refresh"
