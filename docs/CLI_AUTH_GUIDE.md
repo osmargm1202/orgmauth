@@ -4,6 +4,16 @@ This guide is for CLI clients that send users through OrgAuth and receive tokens
 
 If you are building an API, service, or backend that needs to validate or refresh OrgAuth-issued tokens, use `docs/APP_TOKEN_GUIDE.md` instead.
 
+## Fetching the Live Guides from OrgAuth
+
+The running service publishes the Markdown docs under `docs/` through these endpoints:
+
+- `GET /developer/docs` for the available document paths
+- `GET /developer/docs/CLI_AUTH_GUIDE.md` for this guide
+- `GET /developer/docs/APP_TOKEN_GUIDE.md` for the app/service token guide
+
+Only known Markdown files under the repo `docs/` directory are served, so callers cannot request arbitrary filesystem paths.
+
 ## Base URLs
 
 | Environment | Base URL |
@@ -158,6 +168,84 @@ Important caveats:
 - Do not keep using an older refresh token after rotation succeeds.
 - There is no server endpoint that can recover a lost refresh token from an access token.
 - Treat the refresh token as an OrgAuth-only exchange credential. Do not try to validate it locally with JWKS.
+
+## Refreshing Tokens from the CLI
+
+Current refresh endpoint:
+
+```text
+POST /token/refresh?refresh_token=<refresh-token>
+```
+
+Request notes:
+
+- `refresh_token` is required and is currently passed in the query string.
+- A successful refresh always rotates the refresh token; store the returned replacement immediately.
+- The returned access token is a new RS256 JWT for downstream bearer auth.
+
+Current success response:
+
+```json
+{
+  "access_token": "<new-access-token>",
+  "refresh_token": "<new-refresh-token>",
+  "token_type": "bearer",
+  "expires_in": 900,
+  "user": {
+    "id": 123,
+    "google_id": "google-user-id",
+    "email": "user@or-gm.com",
+    "name": "User Name",
+    "picture": "https://...",
+    "created_at": "2026-03-26T12:00:00",
+    "last_access": "2026-03-26T12:00:00"
+  }
+}
+```
+
+Response field shape:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `access_token` | `string` | New bearer access token to send to downstream APIs. |
+| `refresh_token` | `string` | New rotated refresh token that replaces the old one. |
+| `token_type` | `string` | Always `bearer`. |
+| `expires_in` | `integer` | Access-token lifetime in seconds. |
+| `user.id` | `integer` | OrgAuth user id. |
+| `user.google_id` | `string` | Backing Google account identifier. |
+| `user.email` | `string` | User email. |
+| `user.name` | `string` | Display name. |
+| `user.picture` | `string \| null` | Avatar URL when available. |
+| `user.created_at` | `string` | User creation timestamp in ISO-like datetime format. |
+| `user.last_access` | `string \| null` | Most recent recorded access timestamp. |
+
+Example `200 OK` flow:
+
+1. CLI sends `POST /token/refresh?refresh_token=<current-refresh-token>`.
+2. OrgAuth verifies the refresh token against its session state.
+3. OrgAuth responds with the JSON object above.
+4. CLI replaces both the stored access token and stored refresh token with the returned values.
+
+Current failure cases:
+
+- `401 Invalid refresh token`
+- `401 Session not found`
+- `401 Refresh token expired`
+- `401 User not found`
+- `422` when `refresh_token` is omitted
+
+Recommended CLI behavior:
+
+1. Refresh when an API call fails because the access token is invalid or expired, or shortly before the access token should expire.
+2. Replace both stored tokens after every successful refresh.
+3. Never continue using the old refresh token after a successful refresh.
+4. If refresh returns any `401`, clear local auth state and start a new login.
+
+Refresh contract notes:
+
+- `/token/refresh` still expects `refresh_token` in the query string.
+- A successful refresh returns a new asymmetric access token and a rotated refresh token.
+- Refresh tokens are OrgAuth-only credentials and are not published in JWKS.
 
 ## When the CLI Must Send the User Through Login Again
 

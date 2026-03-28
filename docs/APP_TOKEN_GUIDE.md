@@ -4,6 +4,16 @@ This guide is for apps and services that consume OrgAuth-issued tokens after a u
 
 If you are building the CLI login flow itself, including the localhost callback and token capture, use `docs/CLI_AUTH_GUIDE.md`.
 
+## Fetching the Live Guides from OrgAuth
+
+The running service exposes the Markdown files under `docs/` through a safe read-only API:
+
+- `GET /developer/docs` returns the list of published Markdown paths and fetch URLs.
+- `GET /developer/docs/APP_TOKEN_GUIDE.md` returns this guide as `text/markdown`.
+- `GET /developer/docs/CLI_AUTH_GUIDE.md` returns the CLI guide as `text/markdown`.
+
+The path after `/developer/docs/` must match a real Markdown file under the service's `docs/` directory. Arbitrary filesystem paths are not exposed.
+
 ## Base URLs
 
 | Environment | Base URL |
@@ -94,6 +104,12 @@ Current refresh endpoint:
 POST /token/refresh?refresh_token=<refresh-token>
 ```
 
+Request notes:
+
+- `refresh_token` is required and is currently passed in the query string.
+- A successful refresh always rotates the refresh token; store the returned replacement immediately.
+- The returned access token is a new RS256 JWT for downstream bearer auth.
+
 Current success response:
 
 ```json
@@ -113,6 +129,29 @@ Current success response:
   }
 }
 ```
+
+Response field shape:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `access_token` | `string` | New bearer access token to send to downstream APIs. |
+| `refresh_token` | `string` | New rotated refresh token that replaces the old one. |
+| `token_type` | `string` | Always `bearer`. |
+| `expires_in` | `integer` | Access-token lifetime in seconds. |
+| `user.id` | `integer` | OrgAuth user id. |
+| `user.google_id` | `string` | Backing Google account identifier. |
+| `user.email` | `string` | User email. |
+| `user.name` | `string` | Display name. |
+| `user.picture` | `string \| null` | Avatar URL when available. |
+| `user.created_at` | `string` | User creation timestamp in ISO-like datetime format. |
+| `user.last_access` | `string \| null` | Most recent recorded access timestamp. |
+
+Example `200 OK` flow:
+
+1. Client sends `POST /token/refresh?refresh_token=<current-refresh-token>`.
+2. OrgAuth verifies the refresh token against its session state.
+3. OrgAuth responds with the JSON object above.
+4. Client replaces both the stored access token and stored refresh token with the returned values.
 
 Current failure cases:
 

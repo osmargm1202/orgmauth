@@ -52,6 +52,15 @@ class JWKSResponse(BaseModel):
     keys: list[JWKResponse]
 
 
+class DocumentationEntry(BaseModel):
+    path: str
+    url: str
+
+
+class DocumentationIndexResponse(BaseModel):
+    docs: list[DocumentationEntry]
+
+
 class DeniedAppBase(BaseModel):
     app_name: str
 

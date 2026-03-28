@@ -46,7 +46,7 @@ def refresh_token(
         db.query(SessionModel)
         .filter(
             SessionModel.user_id == int(token_payload.sub),
-            SessionModel.revoked == False,
+            SessionModel.revoked.is_(False),
             SessionModel.refresh_token_hash == hashed_refresh_token,
         )
         .order_by(SessionModel.created_at.desc())
@@ -58,7 +58,7 @@ def refresh_token(
             db.query(SessionModel)
             .filter(
                 SessionModel.user_id == int(token_payload.sub),
-                SessionModel.revoked == False,
+                SessionModel.revoked.is_(False),
             )
             .order_by(SessionModel.created_at.desc())
             .all()

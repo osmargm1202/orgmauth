@@ -1,6 +1,4 @@
-import os
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,15 +8,6 @@ from tests.key_material import (
     TEST_ACCESS_TOKEN_PRIVATE_KEY,
     TEST_ACCESS_TOKEN_PUBLIC_KEY,
 )
-
-
-TEST_DB_PATH = Path(__file__).resolve().parent / "test_oauth_flow.db"
-os.environ.setdefault("DATABASE_URL", f"sqlite:///{TEST_DB_PATH}")
-os.environ.setdefault("GOOGLE_CLIENT_ID", "test-google-client-id")
-os.environ.setdefault("GOOGLE_CLIENT_SECRET", "test-google-client-secret")
-os.environ.setdefault("ACCESS_TOKEN_ACTIVE_KID", "test-rs256-key")
-os.environ.setdefault("ACCESS_TOKEN_PRIVATE_KEY_PEM", TEST_ACCESS_TOKEN_PRIVATE_KEY)
-os.environ.setdefault("ACCESS_TOKEN_PUBLIC_KEY_PEM", TEST_ACCESS_TOKEN_PUBLIC_KEY)
 
 from app.auth.jwt import (
     create_access_token,
@@ -180,6 +169,36 @@ def test_jwks_endpoint_exposes_active_public_key(client):
     assert payload["keys"][0]["alg"] == "RS256"
     assert payload["keys"][0]["e"] == "AQAB"
     assert payload["keys"][0]["n"]
+
+
+def test_documentation_index_lists_markdown_guides(client):
+    response = client.get("/developer/docs")
+
+    assert response.status_code == 200
+
+    docs = {entry["path"]: entry["url"] for entry in response.json()["docs"]}
+
+    assert "APP_TOKEN_GUIDE.md" in docs
+    assert docs["APP_TOKEN_GUIDE.md"].endswith("/developer/docs/APP_TOKEN_GUIDE.md")
+    assert "CLI_AUTH_GUIDE.md" in docs
+
+
+def test_documentation_endpoint_serves_markdown_by_stable_path(client):
+    response = client.get("/developer/docs/APP_TOKEN_GUIDE.md")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/markdown")
+    assert "# App Token Guide" in response.text
+
+
+def test_documentation_endpoint_rejects_unsafe_or_unknown_paths(client):
+    unsafe_response = client.get("/developer/docs/%2E%2E/README.md")
+    unknown_response = client.get("/developer/docs/UNKNOWN.md")
+
+    assert unsafe_response.status_code == 404
+    assert unsafe_response.json()["detail"] == "Documentation not found"
+    assert unknown_response.status_code == 404
+    assert unknown_response.json()["detail"] == "Documentation not found"
 
 
 def test_protected_endpoint_accepts_valid_asymmetric_access_token(client, db_session):

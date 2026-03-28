@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from pathlib import Path, PurePosixPath
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.auth.jwt import get_jwks
@@ -8,17 +11,76 @@ from app.schemas import (
     ApplicationResponse,
     UserResponse,
     AllowedAppsResponse,
+    DocumentationEntry,
+    DocumentationIndexResponse,
     JWKSResponse,
 )
 from app.config import settings
 
 router = APIRouter(tags=["public"])
+DOCS_ROOT = Path(__file__).resolve().parents[2] / "docs"
+
+
+def _available_docs() -> dict[str, Path]:
+    return {
+        path.relative_to(DOCS_ROOT).as_posix(): path
+        for path in sorted(DOCS_ROOT.rglob("*.md"))
+    }
+
+
+def _resolve_doc_path(doc_path: str) -> Path:
+    normalized = PurePosixPath(doc_path)
+    safe_path = normalized.as_posix()
+
+    if (
+        not doc_path
+        or normalized.is_absolute()
+        or safe_path in {"", "."}
+        or any(part == ".." for part in normalized.parts)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Documentation not found",
+        )
+
+    resolved = _available_docs().get(safe_path)
+    if resolved is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Documentation not found",
+        )
+
+    return resolved
 
 
 @router.get("/.well-known/jwks.json", response_model=JWKSResponse)
 def get_jwks_document(response: Response):
     response.headers["Cache-Control"] = settings.JWKS_CACHE_CONTROL
     return get_jwks()
+
+
+@router.get("/developer/docs", response_model=DocumentationIndexResponse)
+def list_documentation(request: Request):
+    docs = [
+        DocumentationEntry(
+            path=doc_path,
+            url=str(request.url_for("get_documentation_doc", doc_path=doc_path)),
+        )
+        for doc_path in _available_docs()
+    ]
+    return DocumentationIndexResponse(docs=docs)
+
+
+@router.get(
+    "/developer/docs/{doc_path:path}",
+    response_class=PlainTextResponse,
+    name="get_documentation_doc",
+)
+def get_documentation_doc(doc_path: str):
+    document = _resolve_doc_path(doc_path)
+    return PlainTextResponse(
+        document.read_text(encoding="utf-8"), media_type="text/markdown"
+    )
 
 
 @router.get("/apps", response_model=list[ApplicationResponse])
